@@ -26,12 +26,12 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Build APK
-        run: flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} --dart-define=APP_BUILD=1.0.${{ github.run_number }}
-      - run: cp build/app/outputs/flutter-apk/app-release.apk Cozy-1.0.${{ github.run_number }}.apk
+        run: N=$((GITHUB_RUN_NUMBER + 10)); echo "N=$N" >> $GITHUB_ENV; flutter build apk --release --build-name=1.0.$N --build-number=$N --dart-define=APP_BUILD=$N
+      - run: cp build/app/outputs/flutter-apk/app-release.apk Cozy-build-${{ env.N }}.apk
       - uses: actions/upload-artifact@v4
         with:
           name: cozy-android
-          path: Cozy-1.0.${{ github.run_number }}.apk
+          path: Cozy-build-${{ env.N }}.apk
           retention-days: 30
 
   ios:
@@ -45,14 +45,14 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Build iOS (no signing)
-        run: flutter build ios --release --no-codesign --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} --dart-define=APP_BUILD=1.0.${{ github.run_number }}
+        run: N=$((GITHUB_RUN_NUMBER + 10)); echo "N=$N" >> $GITHUB_ENV; flutter build ios --release --no-codesign --build-name=1.0.$N --build-number=$N --dart-define=APP_BUILD=$N
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
-          zip -qr Cozy-1.0.${{ github.run_number }}-unsigned.ipa Payload
+          zip -qr Cozy-build-${{ env.N }}-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: cozy-ios
-          path: Cozy-1.0.${{ github.run_number }}-unsigned.ipa
+          path: Cozy-build-${{ env.N }}-unsigned.ipa
           retention-days: 30
