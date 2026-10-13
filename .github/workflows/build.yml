@@ -56,3 +56,24 @@ jobs:
           name: cozy-ios
           path: Cozy-build-${{ env.N }}-unsigned.ipa
           retention-days: 30
+
+  publish:
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish to the builds branch
+        run: |
+          cd out
+          echo "Cozy build $((GITHUB_RUN_NUMBER + 10)) ($GITHUB_SHA)" > README.txt
+          git init -q -b builds
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Cozy build $((GITHUB_RUN_NUMBER + 10))"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" builds
