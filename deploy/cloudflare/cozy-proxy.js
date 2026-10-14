@@ -1,7 +1,7 @@
-// cozy.expresphone.com → arnonidan.pythonanywhere.com (Cozy runs on PythonAnywhere).
-// Visitors see cozy.expresphone.com; the old address keeps working too.
+// cozycrafts.expresphone.com → arnonidan.pythonanywhere.com (Cozy runs on PythonAnywhere).
+// Visitors see cozycrafts.expresphone.com; the old address keeps working too.
 const ORIGIN = "https://arnonidan.pythonanywhere.com";
-const PUBLIC = "https://cozy.expresphone.com";
+const PUBLIC = "https://cozycrafts.expresphone.com";
 
 export default {
   async fetch(request) {
