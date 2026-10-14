@@ -27,11 +27,11 @@ jobs:
       - run: flutter pub get
       - name: Build APK
         run: N=$((GITHUB_RUN_NUMBER + 10)); echo "N=$N" >> $GITHUB_ENV; flutter build apk --release --build-name=1.0.$N --build-number=$N --dart-define=APP_BUILD=$N
-      - run: cp build/app/outputs/flutter-apk/app-release.apk Cozy-build-${{ env.N }}.apk
+      - run: cp build/app/outputs/flutter-apk/app-release.apk Cozy-v1.0.${{ env.N }}.apk
       - uses: actions/upload-artifact@v4
         with:
           name: cozy-android
-          path: Cozy-build-${{ env.N }}.apk
+          path: Cozy-v1.0.${{ env.N }}.apk
           retention-days: 30
 
   ios:
@@ -50,11 +50,11 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
-          zip -qr Cozy-build-${{ env.N }}-unsigned.ipa Payload
+          zip -qr Cozy-v1.0.${{ env.N }}-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: cozy-ios
-          path: Cozy-build-${{ env.N }}-unsigned.ipa
+          path: Cozy-v1.0.${{ env.N }}-unsigned.ipa
           retention-days: 30
 
   publish:

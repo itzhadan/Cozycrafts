@@ -1221,7 +1221,7 @@ void main() {
 // Build label shown at the bottom of the login screen.
 // Codemagic passes the build number with --dart-define=APP_BUILD=...
 const String kAppBuild = String.fromEnvironment('APP_BUILD', defaultValue: 'dev');
-const String kAppVersionLabel = 'cozycrafts \u00b7 build ' + kAppBuild;
+const String kAppVersionLabel = 'cozycrafts \u00b7 גרסה 1.0.' + kAppBuild;
 
 class ExpresphoneApp extends StatelessWidget {
   const ExpresphoneApp({super.key});
