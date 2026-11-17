@@ -10030,9 +10030,18 @@ class _ChatPageState extends State<ChatPage>
         "file",
         bytes,
         filename: "voice.$ext",
-        contentType: ext == "m4a"
+        // same types the Cozy AI recorder sends (Android records .aac)
+        contentType: ext == "m4a" || ext == "mp4"
             ? MediaType("audio", "mp4")
-            : mediaTypeForExtension(ext),
+            : ext == "aac"
+                ? MediaType("audio", "aac")
+                : ext == "mp3"
+                    ? MediaType("audio", "mpeg")
+                    : ext == "wav"
+                        ? MediaType("audio", "wav")
+                        : ext == "ogg" || ext == "oga" || ext == "opus"
+                            ? MediaType("audio", "ogg")
+                            : mediaTypeForExtension(ext),
       ));
       final res = await request.send().timeout(const Duration(seconds: 90));
       final payload = jsonDecode(await res.stream.bytesToString());
