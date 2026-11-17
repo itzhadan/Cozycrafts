@@ -10023,9 +10023,15 @@ class _ChatPageState extends State<ChatPage>
     try {
       final bytes = await File(path).readAsBytes();
       final ext = path.contains(".") ? path.split(".").last.toLowerCase() : "m4a";
-      final request = http.MultipartRequest("POST", Uri.parse(cozyAiVoiceApi));
-      request.headers["X-Xpressphone-Client"] = "cozy-mobile-v1";
-      request.fields["consent"] = "yes";
+      // Cozy's own server (60 per hour for a signed-in user, Gemini → Hebrew)
+      final request = http.MultipartRequest(
+          "POST", Uri.parse("$api/api/ai/transcribe_media"));
+      request.headers["X-App-User-B64"] =
+          base64Encode(utf8.encode(widget.currentUser));
+      request.headers["X-App-Pin"] = userPin(widget.currentUser);
+      if (RegExp(r'^[\x20-\x7E]+$').hasMatch(widget.currentUser)) {
+        request.headers["X-App-User"] = widget.currentUser;
+      }
       request.files.add(http.MultipartFile.fromBytes(
         "file",
         bytes,
@@ -10043,8 +10049,8 @@ class _ChatPageState extends State<ChatPage>
                             ? MediaType("audio", "ogg")
                             : mediaTypeForExtension(ext),
       ));
-      final res = await request.send().timeout(const Duration(seconds: 90));
-      final payload = jsonDecode(await res.stream.bytesToString());
+      final res = await request.send().timeout(const Duration(seconds: 150));
+      final payload = jsonDecode(utf8.decode(await res.stream.toBytes()));
       hebrew = payload is Map ? "${payload["text"] ?? ""}".trim() : "";
       if (hebrew.isEmpty) {
         showSnack(payload is Map && "${payload["error"] ?? ""}".trim().isNotEmpty
