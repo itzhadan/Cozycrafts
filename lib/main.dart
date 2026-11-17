@@ -10316,8 +10316,16 @@ class _ChatPageState extends State<ChatPage>
   Future<void> showAttachmentMenu() async {
     final action = await showModalBottomSheet<String>(
       context: context,
+      // tall menus scroll instead of being cut off at the bottom (Android)
+      isScrollControlled: true,
+      useSafeArea: true,
       builder: (_) => SafeArea(
-        child: Column(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
@@ -10325,6 +10333,11 @@ class _ChatPageState extends State<ChatPage>
                   color: Colors.greenAccent),
               title: const Text("🎙️ הקלט קול → שלח כקול בכל שפה"),
               onTap: () => Navigator.pop(context, "record_any_lang"),
+            ),
+            ListTile(
+              leading: const Icon(Icons.audio_file, color: Color(0xff00d4ff)),
+              title: const Text("🎵 העלה קובץ קול → שלח כקול בכל שפה"),
+              onTap: () => Navigator.pop(context, "voice_any_lang"),
             ),
             ListTile(
               leading: const Icon(Icons.translate, color: Color(0xff00d4ff)),
@@ -10371,15 +10384,9 @@ class _ChatPageState extends State<ChatPage>
               title: const Text("שלח איש קשר"),
               onTap: () => Navigator.pop(context, "contact"),
             ),
-            ListTile(
-              leading: const Icon(
-                Icons.audio_file,
-                color: const Color(0xff00d4ff),
-              ),
-              title: const Text("🎵 קובץ קול → שלח כקול בכל שפה"),
-              onTap: () => Navigator.pop(context, "voice_any_lang"),
-            ),
           ],
+        ),
+          ),
         ),
       ),
     );
