@@ -4543,6 +4543,9 @@ class _CozyAiPageState extends State<CozyAiPage> {
       req.fields["sender"] = widget.currentUser;
       req.fields["user"] = widget.currentUser;
       req.fields["pin"] = userPin(widget.currentUser);
+      req.fields["username"] = widget.currentUser;
+      req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
+      req.headers["X-App-Pin"] = userPin(widget.currentUser);
       req.fields["wa_id"] = waId;
       req.fields["country"] = "${chat["country"] ?? country}";
       req.fields["filename"] = "voice.mp3";
@@ -9556,6 +9559,9 @@ class _ChatPageState extends State<ChatPage>
     req.fields["sender"] = widget.currentUser;
     req.fields["user"] = widget.currentUser;
     req.fields["pin"] = userPin(widget.currentUser);
+    req.fields["username"] = widget.currentUser;
+    req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
+    req.headers["X-App-Pin"] = userPin(widget.currentUser);
     req.fields["wa_id"] = widget.waId;
     req.fields["country"] = widget.country;
     req.fields["filename"] = filename;
@@ -9622,6 +9628,38 @@ class _ChatPageState extends State<ChatPage>
     }
   }
 
+  /// Audio file from the phone → transcribe → choose ANY language → voice → send.
+  Future<void> chooseAudioAndSendAnyLanguage() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          "aac", "aiff", "amr", "m4a", "mp3", "mp4", "oga", "ogg", "opus",
+          "wav", "webm",
+        ],
+        withData: true,
+      );
+      final file = result?.files.single;
+      if (file == null) return;
+      final ext = file.name.contains('.')
+          ? file.name.split('.').last.toLowerCase()
+          : 'm4a';
+      final bytes = file.bytes ??
+          (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) {
+        showSnack("לא הצלחתי לקרוא את קובץ הקול");
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path =
+          "${dir.path}/picked_${DateTime.now().millisecondsSinceEpoch}.$ext";
+      await File(path).writeAsBytes(bytes, flush: true);
+      await recordAndSendVoiceAnyLanguage(fromFile: path);
+    } catch (e) {
+      showSnack("שגיאה בקובץ הקול: $e");
+    }
+  }
+
   Future<void> chooseAudioAndSendEnglishText() async {
     try {
       final result = await FilePicker.pickFiles(
@@ -9680,6 +9718,9 @@ class _ChatPageState extends State<ChatPage>
       req.fields["wa_id"] = widget.waId;
       req.fields["user"] = widget.currentUser;
       req.fields["pin"] = userPin(widget.currentUser);
+      req.fields["username"] = widget.currentUser;
+      req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
+      req.headers["X-App-Pin"] = userPin(widget.currentUser);
       req.fields["sender"] = widget.currentUser;
       req.fields["country"] = widget.country;
       req.fields["filename"] = filename;
@@ -9907,13 +9948,13 @@ class _ChatPageState extends State<ChatPage>
   ];
 
   /// Record in Hebrew → choose ANY language → translated voice file → preview → send to this customer.
-  Future<void> recordAndSendVoiceAnyLanguage() async {
+  Future<void> recordAndSendVoiceAnyLanguage({String? fromFile}) async {
     hideKeyboard();
     final recorder = FlutterSoundRecorder();
     var recorderOpened = false;
     final isIos = !kIsWeb && Platform.isIOS;
-    String path = "";
-    try {
+    String path = fromFile ?? "";
+    if (fromFile == null) try {
       final micStatus = await Permission.microphone.request();
       if (!micStatus.isGranted) {
         showSnack("צריך לאשר מיקרופון כדי להקליט קול");
@@ -9972,15 +10013,17 @@ class _ChatPageState extends State<ChatPage>
     setState(() => sending = true);
     try {
       final bytes = await File(path).readAsBytes();
-      final isM4a = path.endsWith(".m4a");
+      final ext = path.contains(".") ? path.split(".").last.toLowerCase() : "m4a";
       final request = http.MultipartRequest("POST", Uri.parse(cozyAiVoiceApi));
       request.headers["X-Xpressphone-Client"] = "cozy-mobile-v1";
       request.fields["consent"] = "yes";
       request.files.add(http.MultipartFile.fromBytes(
         "file",
         bytes,
-        filename: isM4a ? "voice.m4a" : "voice.aac",
-        contentType: MediaType("audio", isM4a ? "mp4" : "aac"),
+        filename: "voice.$ext",
+        contentType: ext == "m4a"
+            ? MediaType("audio", "mp4")
+            : mediaTypeForExtension(ext),
       ));
       final res = await request.send().timeout(const Duration(seconds: 90));
       final payload = jsonDecode(await res.stream.bytesToString());
@@ -10223,6 +10266,9 @@ class _ChatPageState extends State<ChatPage>
       req.fields["wa_id"] = widget.waId;
       req.fields["user"] = widget.currentUser;
       req.fields["pin"] = userPin(widget.currentUser);
+      req.fields["username"] = widget.currentUser;
+      req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
+      req.headers["X-App-Pin"] = userPin(widget.currentUser);
       req.fields["sender"] = widget.currentUser;
       req.fields["country"] = widget.country;
       req.fields["filename"] = "voice.$extension";
@@ -10263,6 +10309,23 @@ class _ChatPageState extends State<ChatPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.record_voice_over,
+                  color: Colors.greenAccent),
+              title: const Text("🎙️ הקלט קול → שלח כקול בכל שפה"),
+              onTap: () => Navigator.pop(context, "record_any_lang"),
+            ),
+            ListTile(
+              leading: const Icon(Icons.translate, color: Color(0xff00d4ff)),
+              title: const Text("שלח את ההודעה שכתבתי בשפה אחרת"),
+              onTap: () => Navigator.pop(context, "translate"),
+            ),
+            ListTile(
+              leading: const Icon(Icons.emoji_emotions,
+                  color: Colors.yellowAccent),
+              title: const Text("אימוג'י ומדבקות"),
+              onTap: () => Navigator.pop(context, "emoji"),
+            ),
+            ListTile(
               leading: const Icon(
                 Icons.insert_drive_file,
                 color: Colors.orangeAccent,
@@ -10297,23 +10360,12 @@ class _ChatPageState extends State<ChatPage>
               onTap: () => Navigator.pop(context, "contact"),
             ),
             ListTile(
-              leading: const Icon(Icons.record_voice_over,
-                  color: Colors.greenAccent),
-              title: const Text("הקלט קול → שלח כקול בכל שפה"),
-              onTap: () => Navigator.pop(context, "record_any_lang"),
-            ),
-            ListTile(
-              leading: const Icon(Icons.mic, color: Colors.greenAccent),
-              title: const Text("הקלט קול → שלח באנגלית"),
-              onTap: () => Navigator.pop(context, "record_english"),
-            ),
-            ListTile(
               leading: const Icon(
                 Icons.audio_file,
                 color: const Color(0xff00d4ff),
               ),
-              title: const Text("קובץ קול → שלח באנגלית"),
-              onTap: () => Navigator.pop(context, "voice_english"),
+              title: const Text("🎵 קובץ קול → שלח כקול בכל שפה"),
+              onTap: () => Navigator.pop(context, "voice_any_lang"),
             ),
           ],
         ),
@@ -10326,6 +10378,47 @@ class _ChatPageState extends State<ChatPage>
     if (action == "location") await sendLocation();
     if (action == "contact") await pickAndSendContact();
     if (action == "record_any_lang") await recordAndSendVoiceAnyLanguage();
+    if (action == "voice_any_lang") await chooseAudioAndSendAnyLanguage();
+    if (action == "emoji") {
+      hideKeyboard();
+      setState(() => _emojiPanelOpen = true);
+    }
+    if (action == "translate") {
+      if (txt.text.trim().isEmpty) {
+        showSnack("כתוב קודם הודעה, ואז בחר שפה");
+      } else {
+        final lang = await showModalBottomSheet<String>(
+          context: context,
+          isScrollControlled: true,
+          builder: (ctx) => SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.6,
+              child: ListView(
+                children: [
+                  const ListTile(
+                    title: Text("באיזו שפה לשלוח?",
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  for (final e in const [
+                    ["en", "אנגלית"], ["fr", "צרפתית"], ["pt", "פורטוגזית"],
+                    ["sw", "סוואהילית"], ["ny", "צ'יצ'ווה"], ["ar", "ערבית"],
+                    ["am", "אמהרית"], ["ha", "האוסה"], ["yo", "יורובה"],
+                    ["ig", "איגבו"], ["zu", "זולו"], ["so", "סומלית"],
+                    ["es", "ספרדית"], ["ru", "רוסית"], ["zh", "סינית"],
+                    ["hi", "הינדי"], ["tr", "טורקית"], ["de", "גרמנית"],
+                  ])
+                    ListTile(
+                      title: Text(e[1]),
+                      onTap: () => Navigator.pop(ctx, e[0]),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+        if (lang != null) await sendTextLang(lang);
+      }
+    }
     if (action == "record_english") await recordAndSendVoiceEnglish();
     if (action == "voice_english") await chooseAudioAndSendEnglishText();
   }
@@ -12561,27 +12654,6 @@ class _ChatPageState extends State<ChatPage>
                         : Colors.orangeAccent,
                   ),
                 ),
-                IconButton(
-                  style: IconButton.styleFrom(
-                    overlayColor: appLightMode.value
-                        ? const Color(0xff008069)
-                        : null,
-                  ),
-                  onPressed: () {
-                    hideKeyboard();
-                    setState(() => _emojiPanelOpen = !_emojiPanelOpen);
-                  },
-                  icon: Icon(
-                    Icons.emoji_emotions,
-                    color: appLightMode.value
-                        ? (_emojiPanelOpen
-                              ? const Color(0xff008069)
-                              : const Color(0xff2a2f32))
-                        : (_emojiPanelOpen
-                              ? const Color(0xff00d4ff)
-                              : Colors.yellowAccent),
-                  ),
-                ),
                 if (keyboardOpen)
                   IconButton(
                     tooltip: "הורד מקלדת",
@@ -12625,39 +12697,6 @@ class _ChatPageState extends State<ChatPage>
                       ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: "הקלט קול ושלח כקול בשפה לבחירה",
-                  icon: Icon(
-                    Icons.mic,
-                    color: appLightMode.value
-                        ? const Color(0xff2a2f32)
-                        : const Color(0xff4ade80),
-                  ),
-                  onPressed: sending ? null : recordAndSendVoiceAnyLanguage,
-                ),
-                PopupMenuButton<String>(
-                  tooltip: "שלח בשפה",
-                  icon: Icon(
-                    Icons.translate,
-                    color: appLightMode.value
-                        ? const Color(0xff2a2f32)
-                        : const Color(0xff00d4ff),
-                  ),
-                  enabled: !sending,
-                  onSelected: (lang) {
-                    if (_emojiPanelOpen) {
-                      setState(() => _emojiPanelOpen = false);
-                    }
-                    sendTextLang(lang);
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: "en", child: Text("אנגלית")),
-                    PopupMenuItem(value: "fr", child: Text("צרפתית")),
-                    PopupMenuItem(value: "sw", child: Text("סוואהילית")),
-                    PopupMenuItem(value: "pt", child: Text("פורטוגזית")),
-                    PopupMenuItem(value: "ar", child: Text("ערבית")),
-                  ],
                 ),
                 IconButton(
                   style: IconButton.styleFrom(
