@@ -3765,12 +3765,28 @@ class _CozyAiPageState extends State<CozyAiPage> {
     final small = seconds == null
         ? bytes.length <= 700 * 1024
         : (seconds <= 100 && bytes.length <= 1800 * 1024);
+    // Some Android phones save the "AAC" recording inside an MP4 container:
+    // label it by its real content so the transcription server accepts it.
+    if (bytes.length > 12 &&
+        ascii.decode(bytes.sublist(4, 8), allowInvalid: true) == "ftyp") {
+      type = MediaType("audio", "mp4");
+      filename = filename.replaceAll(RegExp(r"\.[A-Za-z0-9]+$"), ".m4a");
+    }
     if (small) {
       onProgress?.call("מתמלל את ההקלטה...");
-      return _VoiceResult(
-        await _transcribeVoiceBytes(bytes, filename, type),
-        0,
-      );
+      try {
+        return _VoiceResult(
+          await _transcribeVoiceBytes(bytes, filename, type),
+          0,
+        );
+      } catch (_) {
+        // the transcription server refused (type, limit, busy): use the app server
+        onProgress?.call("מתמלל בשרת הגיבוי...");
+        return _VoiceResult(
+          await _transcribeOnServer(bytes, filename, type),
+          0,
+        );
+      }
     }
     return _transcribeLongBytes(bytes, filename, type, onProgress: onProgress);
   }
