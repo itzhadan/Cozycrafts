@@ -425,6 +425,22 @@ Color avatarFallbackColor(String seed) {
 }
 
 final AudioPlayer _incomingAlertPlayer = AudioPlayer();
+
+// Plays through the loudspeaker at full volume. After recording, iOS keeps the
+// audio session in "record" mode and plays through the quiet earpiece.
+final AudioContext loudSpeakerAudio = AudioContext(
+  iOS: AudioContextIOS(
+    category: AVAudioSessionCategory.playback,
+    options: const {},
+  ),
+  android: const AudioContextAndroid(
+    isSpeakerphoneOn: true,
+    stayAwake: false,
+    contentType: AndroidContentType.music,
+    usageType: AndroidUsageType.media,
+    audioFocus: AndroidAudioFocus.gain,
+  ),
+);
 final ValueNotifier<bool> appLightMode = ValueNotifier<bool>(false);
 bool _firebaseReady = false;
 
@@ -3232,7 +3248,7 @@ class _CozyAiPageState extends State<CozyAiPage> {
       "🖼️ לנתח תמונה של תקלה או של הודעת שגיאה\n"
       "🎙️ להקליט הודעה או לתמלל קובץ שמע — עד 20 דקות, תמיד בעברית (גם משפה אחרת)\n"
       "🎥 וידאו: תמלול בלבד, או תמלול + הסבר של מה שרואים — עד 20 דקות ו-60 מגה\n"
-      "🗣️ לדבר בעברית ולקבל קובץ שמע בשפה אחרת (אנגלית, רוסית, ערבית ועוד)\n"
+      "🗣️ לדבר בעברית ולקבל קובץ שמע בכל שפה, ולשלוח אותו ללקוח בצ'אט\n"
       "📧 לשלוח תשובה במייל או בוואטסאפ (כפתור מתחת לתשובה, או לכתוב \"שלח לי במייל\")\n"
       "📄 לערוך PDF: החלפת טקסט וטיוטה לשיתוף\n"
       "🕘 לשמור את השיחות שלך ולחזור אליהן\n\n"
@@ -4244,7 +4260,7 @@ class _CozyAiPageState extends State<CozyAiPage> {
       _messages.add({
         "role": "assistant",
         "text":
-            "באיזו שפה ליצור את קובץ השמע?\nכתוב שם של שפה, למשל: אנגלית, רוסית, ערבית, צרפתית, ספרדית, אמהרית.\n(או \"ביטול\")",
+            "באיזו שפה ליצור את קובץ השמע?\nכתוב את שם השפה. אפשר כל שפה, למשל: אנגלית, צרפתית, פורטוגזית, סווהילית, יורובה, הינדי, סינית, ערבית, רוסית.\n(או \"ביטול\")",
       });
     });
     _toBottom();
@@ -4355,6 +4371,8 @@ class _CozyAiPageState extends State<CozyAiPage> {
       }
       await _speakPlayer.stop();
       if (mounted) setState(() => _playingPath = path);
+      await _speakPlayer.setAudioContext(loudSpeakerAudio);
+      await _speakPlayer.setVolume(1.0);
       await _speakPlayer.play(DeviceFileSource(path));
     } catch (_) {
       if (mounted) {
@@ -4363,6 +4381,148 @@ class _CozyAiPageState extends State<CozyAiPage> {
           const SnackBar(content: Text("לא ניתן לנגן את הקובץ.")),
         );
       }
+    }
+  }
+
+  /// Sends the created audio file to a customer's chat thread (like a file sent from the chat).
+  Future<void> _sendSpeakToCustomer(String path) async {
+    void say(String t) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+    }
+
+    List countries = [];
+    try {
+      final r = await http
+          .get(Uri.parse("$api/api/countries"))
+          .timeout(const Duration(seconds: 10));
+      final d = jsonDecode(utf8.decode(r.bodyBytes));
+      countries = d is List ? d : [];
+    } catch (_) {}
+    if (!mounted) return;
+    if (countries.isEmpty) {
+      say("לא הצלחתי לטעון את המדינות. בדוק אינטרנט.");
+      return;
+    }
+    final country = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.7,
+          child: ListView(
+            children: [
+              const ListTile(
+                title: Text("לאיזו מדינה לשלוח?",
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              for (final c in countries)
+                if (c is Map && c["code"] != null)
+                  ListTile(
+                    title: Text(
+                      "${c["name_he"] ?? c["name"] ?? c["title"] ?? c["code"]}",
+                      textDirection: TextDirection.rtl,
+                    ),
+                    onTap: () => Navigator.pop(ctx, "${c["code"]}"),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (country == null || !mounted) return;
+
+    List chats = [];
+    try {
+      final r = await http
+          .get(Uri.parse("$api/api/chats").replace(
+            queryParameters: {"country": country, "username": widget.currentUser},
+          ))
+          .timeout(const Duration(seconds: 10));
+      final d = jsonDecode(utf8.decode(r.bodyBytes));
+      chats = d is List ? d : [];
+    } catch (_) {}
+    if (!mounted) return;
+    if (chats.isEmpty) {
+      say("אין לקוחות במדינה הזאת.");
+      return;
+    }
+    var q = "";
+    final chat = await showModalBottomSheet<Map>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final shown = chats.where((x) {
+            if (x is! Map) return false;
+            final t = "${x["name"] ?? ""} ${x["wa_id"] ?? ""}".toLowerCase();
+            return q.isEmpty || t.contains(q.toLowerCase());
+          }).toList();
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.8,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: TextField(
+                      textDirection: TextDirection.rtl,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: "חיפוש לקוח לפי שם או מספר",
+                      ),
+                      onChanged: (v) => setSheet(() => q = v.trim()),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final x in shown)
+                          ListTile(
+                            leading: const Icon(Icons.person),
+                            title: Text("${x["name"] ?? x["wa_id"]}",
+                                textDirection: TextDirection.rtl),
+                            subtitle: Text("${x["wa_id"] ?? ""}",
+                                textDirection: TextDirection.ltr),
+                            onTap: () => Navigator.pop(ctx, x as Map),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (chat == null || !mounted) return;
+    final waId = "${chat["wa_id"] ?? ""}";
+    if (waId.isEmpty) return;
+    say("שולח את קובץ הקול...");
+    try {
+      final bytes = await File(path).readAsBytes();
+      final req = http.MultipartRequest("POST", Uri.parse("$api/api/upload"));
+      req.fields["sender"] = widget.currentUser;
+      req.fields["wa_id"] = waId;
+      req.fields["country"] = "${chat["country"] ?? country}";
+      req.fields["filename"] = "voice.mp3";
+      req.fields["mime_type"] = "audio/mpeg";
+      req.files.add(http.MultipartFile.fromBytes(
+        "file",
+        bytes,
+        filename: "voice.mp3",
+        contentType: MediaType("audio", "mpeg"),
+      ));
+      final res = await req.send().timeout(const Duration(seconds: 60));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        say("✅ קובץ הקול נשלח ל-${chat["name"] ?? waId}");
+      } else {
+        say("❌ השליחה נכשלה (${res.statusCode})");
+      }
+    } catch (_) {
+      say("❌ השליחה נכשלה. בדוק אינטרנט.");
     }
   }
 
@@ -5157,6 +5317,17 @@ class _CozyAiPageState extends State<CozyAiPage> {
                       ),
                       icon: const Icon(Icons.share),
                       label: const Text("שתף / שמור"),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: () =>
+                          _sendSpeakToCustomer(msg["audio_path"]!),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xff25d366),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.send),
+                      label: const Text("שלח ללקוח"),
                     ),
                   ],
                 ),
@@ -8417,6 +8588,8 @@ class _ChatPageState extends State<ChatPage>
         return;
       }
       await chatAudioPlayer.stop();
+      await chatAudioPlayer.setAudioContext(loudSpeakerAudio);
+      await chatAudioPlayer.setVolume(1.0);
       await chatAudioPlayer.play(UrlSource(url));
       if (mounted) setState(() => playingAudioUrl = url);
     } catch (_) {
