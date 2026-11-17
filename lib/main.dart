@@ -4541,6 +4541,8 @@ class _CozyAiPageState extends State<CozyAiPage> {
       final bytes = await File(path).readAsBytes();
       final req = http.MultipartRequest("POST", Uri.parse("$api/api/upload"));
       req.fields["sender"] = widget.currentUser;
+      req.fields["user"] = widget.currentUser;
+      req.fields["pin"] = userPin(widget.currentUser);
       req.fields["wa_id"] = waId;
       req.fields["country"] = "${chat["country"] ?? country}";
       req.fields["filename"] = "voice.mp3";
@@ -9552,6 +9554,8 @@ class _ChatPageState extends State<ChatPage>
 
     final req = http.MultipartRequest("POST", Uri.parse("$api/api/upload"));
     req.fields["sender"] = widget.currentUser;
+    req.fields["user"] = widget.currentUser;
+    req.fields["pin"] = userPin(widget.currentUser);
     req.fields["wa_id"] = widget.waId;
     req.fields["country"] = widget.country;
     req.fields["filename"] = filename;
@@ -9674,6 +9678,9 @@ class _ChatPageState extends State<ChatPage>
         Uri.parse("$api/api/send_voice_english"),
       );
       req.fields["wa_id"] = widget.waId;
+      req.fields["user"] = widget.currentUser;
+      req.fields["pin"] = userPin(widget.currentUser);
+      req.fields["sender"] = widget.currentUser;
       req.fields["country"] = widget.country;
       req.fields["filename"] = filename;
       req.fields["mime_type"] = mediaTypeForExtension(ext).toString();
@@ -10214,6 +10221,9 @@ class _ChatPageState extends State<ChatPage>
         Uri.parse("$api/api/send_voice_english"),
       );
       req.fields["wa_id"] = widget.waId;
+      req.fields["user"] = widget.currentUser;
+      req.fields["pin"] = userPin(widget.currentUser);
+      req.fields["sender"] = widget.currentUser;
       req.fields["country"] = widget.country;
       req.fields["filename"] = "voice.$extension";
       req.fields["mime_type"] = "audio/$mimeSubType";
