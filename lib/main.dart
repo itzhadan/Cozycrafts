@@ -4544,6 +4544,9 @@ class _CozyAiPageState extends State<CozyAiPage> {
       req.fields["user"] = widget.currentUser;
       req.fields["pin"] = userPin(widget.currentUser);
       req.fields["username"] = widget.currentUser;
+      // the server reads these two for file uploads (see hub_web_can_chat)
+      req.fields["app_user"] = widget.currentUser;
+      req.fields["app_pin"] = userPin(widget.currentUser);
       req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
       req.headers["X-App-Pin"] = userPin(widget.currentUser);
       req.fields["wa_id"] = waId;
@@ -9560,6 +9563,9 @@ class _ChatPageState extends State<ChatPage>
     req.fields["user"] = widget.currentUser;
     req.fields["pin"] = userPin(widget.currentUser);
     req.fields["username"] = widget.currentUser;
+    // the server reads these two for file uploads (see hub_web_can_chat)
+    req.fields["app_user"] = widget.currentUser;
+    req.fields["app_pin"] = userPin(widget.currentUser);
     req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
     req.headers["X-App-Pin"] = userPin(widget.currentUser);
     req.fields["wa_id"] = widget.waId;
@@ -9719,6 +9725,9 @@ class _ChatPageState extends State<ChatPage>
       req.fields["user"] = widget.currentUser;
       req.fields["pin"] = userPin(widget.currentUser);
       req.fields["username"] = widget.currentUser;
+      // the server reads these two for file uploads (see hub_web_can_chat)
+      req.fields["app_user"] = widget.currentUser;
+      req.fields["app_pin"] = userPin(widget.currentUser);
       req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
       req.headers["X-App-Pin"] = userPin(widget.currentUser);
       req.fields["sender"] = widget.currentUser;
@@ -10267,6 +10276,9 @@ class _ChatPageState extends State<ChatPage>
       req.fields["user"] = widget.currentUser;
       req.fields["pin"] = userPin(widget.currentUser);
       req.fields["username"] = widget.currentUser;
+      // the server reads these two for file uploads (see hub_web_can_chat)
+      req.fields["app_user"] = widget.currentUser;
+      req.fields["app_pin"] = userPin(widget.currentUser);
       req.headers["X-App-User-B64"] = base64Encode(utf8.encode(widget.currentUser));
       req.headers["X-App-Pin"] = userPin(widget.currentUser);
       req.fields["sender"] = widget.currentUser;
