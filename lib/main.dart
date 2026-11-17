@@ -1265,7 +1265,43 @@ class ExpresphoneApp extends StatelessWidget {
           fontFamily: '.SF Pro Display',
         ),
         home: const PinPage(),
+        // swipe down anywhere to close the keyboard
+        builder: (context, child) =>
+            SwipeDownHidesKeyboard(child: child ?? const SizedBox()),
       ),
+    );
+  }
+}
+
+/// Closes the on-screen keyboard when the user swipes down anywhere in the app.
+/// Uses raw pointer events, so it never blocks scrolling or taps.
+class SwipeDownHidesKeyboard extends StatefulWidget {
+  const SwipeDownHidesKeyboard({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<SwipeDownHidesKeyboard> createState() => _SwipeDownHidesKeyboardState();
+}
+
+class _SwipeDownHidesKeyboardState extends State<SwipeDownHidesKeyboard> {
+  Offset? _start;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (e) => _start = e.position,
+      onPointerUp: (e) {
+        final s = _start;
+        _start = null;
+        if (s == null) return;
+        final dy = e.position.dy - s.dy;
+        final dx = (e.position.dx - s.dx).abs();
+        if (dy > 60 && dy > dx * 1.5) {
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+      },
+      child: widget.child,
     );
   }
 }
@@ -4519,10 +4555,17 @@ class _CozyAiPageState extends State<CozyAiPage> {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         say("✅ קובץ הקול נשלח ל-${chat["name"] ?? waId}");
       } else {
-        say("❌ השליחה נכשלה (${res.statusCode})");
+        final body = await res.stream.bytesToString();
+        var why = body;
+        try {
+          final d = jsonDecode(body);
+          if (d is Map) why = "${d["error"] ?? d["message"] ?? body}";
+        } catch (_) {}
+        if (why.length > 160) why = why.substring(0, 160);
+        say("❌ השליחה נכשלה (${res.statusCode}): $why");
       }
-    } catch (_) {
-      say("❌ השליחה נכשלה. בדוק אינטרנט.");
+    } catch (e) {
+      say("❌ השליחה נכשלה: $e");
     }
   }
 
@@ -9529,7 +9572,15 @@ class _ChatPageState extends State<ChatPage>
       scrollToBottom();
     } else {
       final body = await res.stream.bytesToString();
-      showSnack(uploadErrorMessage(res.statusCode, body));
+      var why = "";
+      try {
+        final d = jsonDecode(body);
+        if (d is Map) why = "${d["error"] ?? d["message"] ?? ""}".trim();
+      } catch (_) {}
+      if (why.length > 160) why = why.substring(0, 160);
+      showSnack(why.isEmpty
+          ? uploadErrorMessage(res.statusCode, body)
+          : "${uploadErrorMessage(res.statusCode, body)}\n$why");
     }
   }
 
@@ -9842,6 +9893,271 @@ class _ChatPageState extends State<ChatPage>
     }
   }
 
+  static const List<String> voiceLanguages = [
+    "אנגלית", "צרפתית", "פורטוגזית", "סווהילית", "צ'יצ'ווה", "ערבית",
+    "אמהרית", "האוסה", "יורובה", "איגבו", "זולו", "סומלית", "ספרדית",
+    "רוסית", "סינית", "הינדי", "טורקית", "גרמנית", "איטלקית", "עברית",
+  ];
+
+  /// Record in Hebrew → choose ANY language → translated voice file → preview → send to this customer.
+  Future<void> recordAndSendVoiceAnyLanguage() async {
+    hideKeyboard();
+    final recorder = FlutterSoundRecorder();
+    var recorderOpened = false;
+    final isIos = !kIsWeb && Platform.isIOS;
+    String path = "";
+    try {
+      final micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) {
+        showSnack("צריך לאשר מיקרופון כדי להקליט קול");
+        return;
+      }
+      await recorder.openRecorder();
+      recorderOpened = true;
+      final dir = await getTemporaryDirectory();
+      final extension = isIos ? "m4a" : "aac";
+      final codec = isIos ? Codec.aacMP4 : Codec.aacADTS;
+      path = "${dir.path}/voice_any_${DateTime.now().millisecondsSinceEpoch}.$extension";
+      await recorder.startRecorder(toFile: path, codec: codec);
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text("🎙️ מקליט... דבר בעברית"),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text("לחץ \"סיום\" כשתסיים. אחר כך תבחר שפה."),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("ביטול"),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.stop),
+              label: const Text("סיום"),
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      );
+      await recorder.stopRecorder();
+      if (ok != true) return;
+    } catch (e) {
+      showSnack("שגיאת הקלטה: $e");
+      return;
+    } finally {
+      if (recorderOpened) {
+        try {
+          await recorder.closeRecorder();
+        } catch (_) {}
+      }
+    }
+
+    // 1) transcribe the Hebrew recording
+    String hebrew = "";
+    setState(() => sending = true);
+    try {
+      final bytes = await File(path).readAsBytes();
+      final isM4a = path.endsWith(".m4a");
+      final request = http.MultipartRequest("POST", Uri.parse(cozyAiVoiceApi));
+      request.headers["X-Xpressphone-Client"] = "cozy-mobile-v1";
+      request.fields["consent"] = "yes";
+      request.files.add(http.MultipartFile.fromBytes(
+        "file",
+        bytes,
+        filename: isM4a ? "voice.m4a" : "voice.aac",
+        contentType: MediaType("audio", isM4a ? "mp4" : "aac"),
+      ));
+      final res = await request.send().timeout(const Duration(seconds: 90));
+      final payload = jsonDecode(await res.stream.bytesToString());
+      hebrew = payload is Map ? "${payload["text"] ?? ""}".trim() : "";
+      if (hebrew.isEmpty) {
+        showSnack(payload is Map && "${payload["error"] ?? ""}".trim().isNotEmpty
+            ? "${payload["error"]}"
+            : "לא התקבל תמלול ברור. נסה שוב.");
+        return;
+      }
+    } catch (e) {
+      showSnack("התמלול לא הצליח: $e");
+      return;
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+    if (!mounted) return;
+
+    // 2) choose ANY language (and fix the text if needed)
+    final textCtrl = TextEditingController(text: hebrew);
+    final langCtrl = TextEditingController();
+    final lang = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text("באיזו שפה לשלוח את הקול?",
+              textDirection: TextDirection.rtl),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: textCtrl,
+                  minLines: 2,
+                  maxLines: 6,
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(
+                    labelText: "מה אמרת (אפשר לתקן)",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: langCtrl,
+                  textDirection: TextDirection.rtl,
+                  decoration: const InputDecoration(
+                    labelText: "כל שפה בעולם — כתוב או בחר למטה",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final l in voiceLanguages)
+                      ActionChip(
+                        label: Text(l),
+                        onPressed: () => Navigator.pop(ctx, l),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("ביטול"),
+            ),
+            FilledButton(
+              onPressed: () {
+                final t = langCtrl.text.trim();
+                if (t.isNotEmpty) Navigator.pop(ctx, t);
+              },
+              child: const Text("המשך"),
+            ),
+          ],
+        ),
+      ),
+    );
+    final finalText = textCtrl.text.trim().isEmpty ? hebrew : textCtrl.text.trim();
+    textCtrl.dispose();
+    langCtrl.dispose();
+    if (lang == null || !mounted) return;
+
+    // 3) translate + create the voice file
+    String mp3 = "";
+    String translated = "";
+    String langName = lang;
+    setState(() => sending = true);
+    showSnack("🔊 מתרגם ויוצר קול ב$lang...");
+    try {
+      final r = await http
+          .post(
+            Uri.parse("$api/api/ai/speak"),
+            headers: {
+              "Content-Type": "application/json",
+              "X-App-User-B64": base64Encode(utf8.encode(widget.currentUser)),
+              "X-App-Pin": userPin(widget.currentUser),
+              if (RegExp(r'^[\x20-\x7E]+$').hasMatch(widget.currentUser))
+                "X-App-User": widget.currentUser,
+            },
+            body: jsonEncode({"text": finalText, "lang": lang}),
+          )
+          .timeout(const Duration(seconds: 90));
+      final data = jsonDecode(utf8.decode(r.bodyBytes));
+      if (r.statusCode < 200 || r.statusCode >= 300 || data is! Map || data["ok"] != true) {
+        showSnack(data is Map && "${data["error"] ?? ""}".trim().isNotEmpty
+            ? "${data["error"]}"
+            : "יצירת הקול לא הצליחה.");
+        return;
+      }
+      translated = "${data["translated"] ?? ""}";
+      langName = "${data["language"] ?? lang}";
+      final dir = await getTemporaryDirectory();
+      mp3 = "${dir.path}/voice_${data["lang"] ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.mp3";
+      await File(mp3).writeAsBytes(base64Decode("${data["audio"]}"), flush: true);
+    } catch (e) {
+      showSnack("יצירת הקול לא הצליחה: $e");
+      return;
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+    if (!mounted) return;
+
+    // 4) preview and send
+    final preview = AudioPlayer();
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("🔊 $langName", textDirection: TextDirection.rtl),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(translated),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: const Text("השמע לפני שליחה"),
+                onPressed: () async {
+                  try {
+                    await preview.setAudioContext(loudSpeakerAudio);
+                    await preview.setVolume(1.0);
+                    await preview.play(DeviceFileSource(mp3));
+                  } catch (_) {}
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("ביטול"),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.send),
+            label: Text("שלח ל${widget.name}"),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+    try {
+      await preview.stop();
+      await preview.dispose();
+    } catch (_) {}
+    if (send != true || !mounted) return;
+    try {
+      await uploadBytes(
+        bytes: await File(mp3).readAsBytes(),
+        filename: "voice.mp3",
+        contentType: MediaType("audio", "mpeg"),
+      );
+    } catch (e) {
+      showSnack("השליחה נכשלה: $e");
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
   Future<void> recordAndSendVoiceEnglish() async {
     final recorder = FlutterSoundRecorder();
     var recorderOpened = false;
@@ -9971,6 +10287,12 @@ class _ChatPageState extends State<ChatPage>
               onTap: () => Navigator.pop(context, "contact"),
             ),
             ListTile(
+              leading: const Icon(Icons.record_voice_over,
+                  color: Colors.greenAccent),
+              title: const Text("הקלט קול → שלח כקול בכל שפה"),
+              onTap: () => Navigator.pop(context, "record_any_lang"),
+            ),
+            ListTile(
               leading: const Icon(Icons.mic, color: Colors.greenAccent),
               title: const Text("הקלט קול → שלח באנגלית"),
               onTap: () => Navigator.pop(context, "record_english"),
@@ -9993,6 +10315,7 @@ class _ChatPageState extends State<ChatPage>
     if (action == "camera") await pickImageAndSend(ImageSource.camera);
     if (action == "location") await sendLocation();
     if (action == "contact") await pickAndSendContact();
+    if (action == "record_any_lang") await recordAndSendVoiceAnyLanguage();
     if (action == "record_english") await recordAndSendVoiceEnglish();
     if (action == "voice_english") await chooseAudioAndSendEnglishText();
   }
@@ -12292,6 +12615,16 @@ class _ChatPageState extends State<ChatPage>
                       ),
                     ),
                   ),
+                ),
+                IconButton(
+                  tooltip: "הקלט קול ושלח כקול בשפה לבחירה",
+                  icon: Icon(
+                    Icons.mic,
+                    color: appLightMode.value
+                        ? const Color(0xff2a2f32)
+                        : const Color(0xff4ade80),
+                  ),
+                  onPressed: sending ? null : recordAndSendVoiceAnyLanguage,
                 ),
                 PopupMenuButton<String>(
                   tooltip: "שלח בשפה",
