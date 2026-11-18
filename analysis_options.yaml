@@ -16,6 +16,13 @@ analyzer:
     - lib/main_WORKING.dart
     - lib/main_backup.dart
     - lib/main.dart.save
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

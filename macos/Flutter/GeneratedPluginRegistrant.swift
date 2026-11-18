@@ -12,6 +12,7 @@ import firebase_core
 import firebase_messaging
 import flutter_contacts
 import flutter_local_notifications
+import flutter_secure_storage_darwin
 import flutter_sound
 import geolocator_apple
 import local_auth_darwin
@@ -29,6 +30,7 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   FLTFirebaseMessagingPlugin.register(with: registry.registrar(forPlugin: "FLTFirebaseMessagingPlugin"))
   FlutterContactsPlugin.register(with: registry.registrar(forPlugin: "FlutterContactsPlugin"))
   FlutterLocalNotificationsPlugin.register(with: registry.registrar(forPlugin: "FlutterLocalNotificationsPlugin"))
+  FlutterSecureStorageDarwinPlugin.register(with: registry.registrar(forPlugin: "FlutterSecureStorageDarwinPlugin"))
   FlutterSoundPlugin.register(with: registry.registrar(forPlugin: "FlutterSoundPlugin"))
   GeolocatorPlugin.register(with: registry.registrar(forPlugin: "GeolocatorPlugin"))
   LocalAuthPlugin.register(with: registry.registrar(forPlugin: "LocalAuthPlugin"))
